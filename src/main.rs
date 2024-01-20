@@ -14,7 +14,6 @@ impl Drop for CleanUp {
     }
 }
 
-
 struct Output{
     win_size: (usize, usize),
     contents: EditorContents
@@ -29,24 +28,23 @@ impl Output {
         contents: EditorContents::new() }
     }
 
-
     fn clear_screen() -> io::Result<()> {
         execute!(stdout(), terminal::Clear(ClearType::All))?;
         execute!(stdout(), cursor::MoveTo(0, 0))
     }
     
-    fn refresh_screen(&mut self) -> io::Result<()> { /* modify */
+    fn refresh_screen(&mut self) -> io::Result<()> {
         queue!(self.contents, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0))?; /* add this line*/
         self.draw_rows();
-        queue!(self.contents, cursor::MoveTo(0, 0))?; /* modify */
+        queue!(self.contents, cursor::MoveTo(0, 0))?;
         self.contents.flush()
     }
-    fn draw_rows(&mut self) { /* modify */
+    fn draw_rows(&mut self) {
         let screen_rows = self.win_size.1;
         for i in 0..screen_rows {
-            self.contents.push('~'); /* modify */
+            self.contents.push('~');
             if i < screen_rows - 1 {
-                self.contents.push_str("\r\n"); /* modify */
+                self.contents.push_str("\r\n");
             }
         }
     }
@@ -124,9 +122,9 @@ impl EditorContents {
 impl io::Write for EditorContents {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match std::str::from_utf8(buf) {
-            Ok(s) => {
-                self.content.push_str(s);
-                Ok(s.len())
+            Ok(str) => {
+                self.content.push_str(str);
+                Ok(str.len())
             }
             Err(_) => {
                 print!("Err");
