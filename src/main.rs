@@ -5,7 +5,6 @@ use std::io;
 use std::io::{stdout, Write};
 use std::time::Duration;
 
-
 const VERSION: &str = "0.1 beta";
 struct CleanUp;
 
@@ -19,6 +18,7 @@ impl Drop for CleanUp {
 struct Output {
     win_size: (usize, usize),
     contents: EditorContents,
+    cursor_ctrl: CursorController,
 }
 
 impl Output {
@@ -29,7 +29,16 @@ impl Output {
         Self {
             win_size,
             contents: EditorContents::new(),
+            cursor_ctrl: CursorController::new(win_size),
         }
+    }
+
+    fn move_cursor(&mut self, direction: KeyCode) {
+        self.cursor_ctrl.move_cursor(direction);
+    }
+
+    fn move_10x(&mut self, direction: KeyCode) {
+        self.cursor_ctrl.move_10x(direction);
     }
 
     fn clear_screen() -> io::Result<()> {
@@ -40,9 +49,12 @@ impl Output {
     fn refresh_screen(&mut self) -> io::Result<()> {
         queue!(self.contents, cursor::Hide, cursor::MoveTo(0, 0))?;
         self.draw_rows();
-        queue!(self.contents, cursor::MoveTo(0, 0), cursor::Show)?;
+        let x = self.cursor_ctrl.cursor_x as u16;
+        let y = self.cursor_ctrl.cursor_y as u16;
+        queue!(self.contents, cursor::MoveTo(x, y), cursor::Show)?;
         self.contents.flush()
     }
+
     fn draw_rows(&mut self) {
         let screen_rows: usize = self.win_size.1;
         for i in 0..screen_rows {
@@ -80,10 +92,9 @@ impl Output {
             padding -= 1
         }
         (0..padding).for_each(|_| self.contents.push(' '));
-                
+
         self.contents.push_str(&welcome)
     }
-
 }
 
 struct Reader;
@@ -113,7 +124,7 @@ impl Editor {
         }
     }
 
-    fn process_keypress(&self) -> io::Result<bool> {
+    fn process_keypress(&mut self) -> io::Result<bool> {
         match self.reader.read_key()? {
             KeyEvent {
                 code: KeyCode::Char('q'),
@@ -121,6 +132,19 @@ impl Editor {
                 kind: event::KeyEventKind::Press,
                 state: event::KeyEventState::NONE,
             } => return Ok(false),
+            KeyEvent {
+                code: input_key @ (KeyCode::Up | KeyCode::Left | KeyCode::Down | KeyCode::Right),
+                modifiers: KeyModifiers::SHIFT,
+                kind: event::KeyEventKind::Press,
+                state: event::KeyEventState::NONE,
+            } => self.output.move_10x(input_key),
+            KeyEvent {
+                code: input_key @ (KeyCode::Up | KeyCode::Left | KeyCode::Down | KeyCode::Right),
+                modifiers: KeyModifiers::NONE,
+                kind: event::KeyEventKind::Press,
+                state: event::KeyEventState::NONE,
+            } => self.output.move_cursor(input_key),
+
             _ => {}
         }
         Ok(true)
@@ -171,6 +195,70 @@ impl io::Write for EditorContents {
         stdout().flush()?;
         self.content.clear();
         out
+    }
+}
+
+struct CursorController {
+    cursor_x: usize,
+    cursor_y: usize,
+    cols: usize,
+    rows: usize,
+}
+
+impl CursorController {
+    fn new(win_size: (usize, usize)) -> CursorController {
+        Self {
+            cursor_x: 0,
+            cursor_y: 0,
+            cols: win_size.0,
+            rows: win_size.1,
+        }
+    }
+
+    fn move_10x(&mut self, direction: KeyCode) {
+        let vertical = self.rows/10;
+        let horizontal = self.cols/10;
+        match direction {
+            KeyCode::Up => {
+                self.cursor_y = self.cursor_y.saturating_sub(vertical);
+            }
+            KeyCode::Left => {
+                self.cursor_x = self.cursor_x.saturating_sub(horizontal);
+            }
+            KeyCode::Down => {
+                if self.cursor_y != self.rows - 1 {
+                    self.cursor_y += vertical;
+                }
+            }
+            KeyCode::Right => {
+                if self.cursor_x != self.cols - 1 {
+                    self.cursor_x += horizontal;
+                }
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    fn move_cursor(&mut self, direction: KeyCode) {
+        match direction {
+            KeyCode::Up => {
+                self.cursor_y = self.cursor_y.saturating_sub(1);
+            }
+            KeyCode::Left => {
+                self.cursor_x = self.cursor_x.saturating_sub(1);
+            }
+            KeyCode::Down => {
+                if self.cursor_y != self.rows - 1 {
+                    self.cursor_y += 1;
+                }
+            }
+            KeyCode::Right => {
+                if self.cursor_x != self.cols - 1 {
+                    self.cursor_x += 1;
+                }
+            }
+            _ => unimplemented!(),
+        }
     }
 }
 
