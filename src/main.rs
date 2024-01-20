@@ -1,10 +1,12 @@
-use crossterm::{cursor, event, execute, terminal, queue};
-use crossterm::event::*; 
-use crossterm::terminal::ClearType; 
-use std::time::Duration;
-use std::io::{stdout, Write};
+use crossterm::event::*;
+use crossterm::terminal::ClearType;
+use crossterm::{cursor, event, execute, queue, terminal};
 use std::io;
+use std::io::{stdout, Write};
+use std::time::Duration;
 
+
+const VERSION: &str = "0.1 beta";
 struct CleanUp;
 
 impl Drop for CleanUp {
@@ -14,40 +16,74 @@ impl Drop for CleanUp {
     }
 }
 
-struct Output{
+struct Output {
     win_size: (usize, usize),
-    contents: EditorContents
+    contents: EditorContents,
 }
 
 impl Output {
     fn new() -> Self {
         let win_size: (usize, usize) = terminal::size()
             .map(|(x, y)| (x as usize, y as usize))
-            .unwrap(); 
-        Self { win_size,
-        contents: EditorContents::new() }
+            .unwrap();
+        Self {
+            win_size,
+            contents: EditorContents::new(),
+        }
     }
 
     fn clear_screen() -> io::Result<()> {
         execute!(stdout(), terminal::Clear(ClearType::All))?;
         execute!(stdout(), cursor::MoveTo(0, 0))
     }
-    
+
     fn refresh_screen(&mut self) -> io::Result<()> {
-        queue!(self.contents, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0))?; /* add this line*/
+        queue!(self.contents, cursor::Hide, cursor::MoveTo(0, 0))?;
         self.draw_rows();
-        queue!(self.contents, cursor::MoveTo(0, 0))?;
+        queue!(self.contents, cursor::MoveTo(0, 0), cursor::Show)?;
         self.contents.flush()
     }
     fn draw_rows(&mut self) {
-        let screen_rows = self.win_size.1;
+        let screen_rows: usize = self.win_size.1;
         for i in 0..screen_rows {
-            self.contents.push('~');
+            if i == screen_rows / 4 {
+                // Welcome message
+                self.draw_message("Welcome to Rudolf".to_string());
+            } else if i == screen_rows / 4 + 1 {
+                self.draw_message(format!("v{}", VERSION))
+            } else {
+                self.contents.push('~')
+            }
+
+            // TODO: build generic error handling module
+            match queue!(self.contents, terminal::Clear(ClearType::UntilNewLine)) {
+                Ok(t) => t,
+                Err(e) => panic!("Problem during unwrap: {}", e.to_string()),
+            }
+
             if i < screen_rows - 1 {
                 self.contents.push_str("\r\n");
             }
         }
     }
+
+    fn draw_message(&mut self, mut welcome: String) {
+        let cols: usize = self.win_size.0;
+        if welcome.len() > cols {
+            welcome.truncate(cols);
+        }
+
+        // handle padding
+        let mut padding: usize = (cols - welcome.len()) / 2;
+        if padding != 0 {
+            self.contents.push('~');
+            padding -= 1
+        }
+        (0..padding).for_each(|_| self.contents.push(' '));
+                
+        self.contents.push_str(&welcome)
+    }
+
 }
 
 struct Reader;
@@ -66,12 +102,12 @@ impl Reader {
 
 struct Editor {
     reader: Reader,
-    output: Output
+    output: Output,
 }
 
 impl Editor {
     fn new() -> Self {
-        Self { 
+        Self {
             reader: Reader,
             output: Output::new(),
         }
@@ -100,15 +136,13 @@ struct EditorContents {
     content: String,
 }
 
-
 impl EditorContents {
-    
     fn new() -> Self {
         Self {
             content: String::new(),
         }
     }
-    
+
     fn push(&mut self, ch: char) {
         self.content.push(ch)
     }
@@ -117,7 +151,6 @@ impl EditorContents {
         self.content.push_str(string)
     }
 }
-
 
 impl io::Write for EditorContents {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -128,7 +161,8 @@ impl io::Write for EditorContents {
             }
             Err(_) => {
                 print!("Err");
-                Err(io::ErrorKind::WriteZero.into())}
+                Err(io::ErrorKind::WriteZero.into())
+            }
         }
     }
 
@@ -144,6 +178,6 @@ fn main() -> io::Result<()> {
     let _clean_up: CleanUp = CleanUp;
     terminal::enable_raw_mode()?;
     let mut editor: Editor = Editor::new();
-    while editor.run()? {};
+    while editor.run()? {}
     Ok(())
 }
